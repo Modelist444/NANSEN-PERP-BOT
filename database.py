@@ -20,23 +20,32 @@ DB_PATH.parent.mkdir(exist_ok=True)
 
 @dataclass
 class Trade:
-    """Represents a completed trade."""
+    """Represents a completed trade with full audit data."""
     id: Optional[int]
     symbol: str
     direction: str
     entry_price: float
     exit_price: Optional[float]
     stop_loss: float
-    take_profit: float  # Partial TP1 for ASMM
-    take_profit_2: float # Final TP2 for ASMM
+    take_profit: float
+    take_profit_2: float
     position_size: float
     entry_time: datetime
     exit_time: Optional[datetime]
     pnl: Optional[float]
     pnl_percent: Optional[float]
-    status: str  # 'open', 'closed_tp', 'closed_sl', 'closed_manual'
+    status: str
     tp1_hit: bool = False
     nansen_signal_strength: float = 0.0
+    
+    # Audit fields (v4.0 Full Audit Mode)
+    acc_balance_at_entry: float = 0.0
+    leverage: int = 1
+    risk_pct: float = 0.0
+    atr_stop_dist: float = 0.0
+    fees: float = 0.0
+    slippage: float = 0.0
+    audit_data: Optional[Dict] = None  # JSON for EMA, RSI, Scaling, etc.
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -55,7 +64,14 @@ class Trade:
             'pnl_percent': self.pnl_percent,
             'status': self.status,
             'tp1_hit': self.tp1_hit,
-            'nansen_signal_strength': self.nansen_signal_strength
+            'nansen_signal_strength': self.nansen_signal_strength,
+            'acc_balance_at_entry': self.acc_balance_at_entry,
+            'leverage': self.leverage,
+            'risk_pct': self.risk_pct,
+            'atr_stop_dist': self.atr_stop_dist,
+            'fees': self.fees,
+            'slippage': self.slippage,
+            'audit_data': self.audit_data
         }
 
 
@@ -163,7 +179,14 @@ class Database:
                 pnl_percent REAL,
                 status TEXT NOT NULL DEFAULT 'open',
                 tp1_hit INTEGER DEFAULT 0,
-                nansen_signal_strength REAL DEFAULT 0
+                nansen_signal_strength REAL DEFAULT 0,
+                acc_balance_at_entry REAL DEFAULT 0,
+                leverage INTEGER DEFAULT 1,
+                risk_pct REAL DEFAULT 0,
+                atr_stop_dist REAL DEFAULT 0,
+                fees REAL DEFAULT 0,
+                slippage REAL DEFAULT 0,
+                audit_data TEXT
             )
         ''')
         
@@ -171,7 +194,14 @@ class Database:
         for column in [
             ('take_profit_2', 'REAL DEFAULT 0'),
             ('tp1_hit', 'INTEGER DEFAULT 0'),
-            ('nansen_signal_strength', 'REAL DEFAULT 0')
+            ('nansen_signal_strength', 'REAL DEFAULT 0'),
+            ('acc_balance_at_entry', 'REAL DEFAULT 0'),
+            ('leverage', 'INTEGER DEFAULT 1'),
+            ('risk_pct', 'REAL DEFAULT 0'),
+            ('atr_stop_dist', 'REAL DEFAULT 0'),
+            ('fees', 'REAL DEFAULT 0'),
+            ('slippage', 'REAL DEFAULT 0'),
+            ('audit_data', 'TEXT')
         ]:
             try:
                 cursor.execute(f'ALTER TABLE trades ADD COLUMN {column[0]} {column[1]}')
@@ -228,17 +258,21 @@ class Database:
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT INTO trades 
-            (symbol, direction, entry_price, exit_price, stop_loss, take_profit, take_profit_2,
-             position_size, entry_time, exit_time, pnl, pnl_percent, status, tp1_hit, nansen_signal_strength)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO trades (symbol, direction, entry_price, exit_price, stop_loss, take_profit, take_profit_2,
+             position_size, entry_time, exit_time, pnl, pnl_percent, status, tp1_hit, 
+             nansen_signal_strength, acc_balance_at_entry, leverage, risk_pct, atr_stop_dist, 
+             fees, slippage, audit_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             trade.symbol, trade.direction, trade.entry_price, trade.exit_price,
             trade.stop_loss, trade.take_profit, trade.take_profit_2, trade.position_size,
             trade.entry_time.isoformat(), 
             trade.exit_time.isoformat() if trade.exit_time else None,
             trade.pnl, trade.pnl_percent, trade.status, 
-            1 if trade.tp1_hit else 0, trade.nansen_signal_strength
+            1 if trade.tp1_hit else 0, trade.nansen_signal_strength,
+            trade.acc_balance_at_entry, trade.leverage, trade.risk_pct, 
+            trade.atr_stop_dist, trade.fees, trade.slippage, 
+            json.dumps(trade.audit_data) if trade.audit_data else None
         ))
         
         trade_id = cursor.lastrowid
@@ -362,7 +396,14 @@ class Database:
             pnl_percent=row['pnl_percent'],
             status=row['status'],
             tp1_hit=bool(row['tp1_hit']) if 'tp1_hit' in row.keys() else False,
-            nansen_signal_strength=row['nansen_signal_strength'] if 'nansen_signal_strength' in row.keys() else 0.0
+            nansen_signal_strength=row['nansen_signal_strength'] if 'nansen_signal_strength' in row.keys() else 0.0,
+            acc_balance_at_entry=row['acc_balance_at_entry'] if 'acc_balance_at_entry' in row.keys() else 0.0,
+            leverage=row['leverage'] if 'leverage' in row.keys() else 1,
+            risk_pct=row['risk_pct'] if 'risk_pct' in row.keys() else 0.0,
+            atr_stop_dist=row['atr_stop_dist'] if 'atr_stop_dist' in row.keys() else 0.0,
+            fees=row['fees'] if 'fees' in row.keys() else 0.0,
+            slippage=row['slippage'] if 'slippage' in row.keys() else 0.0,
+            audit_data=json.loads(row['audit_data']) if 'audit_data' in row.keys() and row['audit_data'] else None
         )
     
     # Equity operations
@@ -499,9 +540,16 @@ class Database:
         cursor.execute('SELECT AVG(pnl) FROM trades WHERE pnl IS NOT NULL')
         avg_pnl = cursor.fetchone()[0] or 0
         
+        # Daily trades
+        today = datetime.now().date().isoformat()
+        cursor.execute('SELECT COUNT(*) FROM trades WHERE entry_time >= ?', (today,))
+        trades_today = cursor.fetchone()[0]
+        
         conn.close()
         
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        from risk import risk_manager
         
         return {
             'total_trades': total_trades,
@@ -509,7 +557,12 @@ class Database:
             'losing_trades': total_trades - winning_trades,
             'win_rate': win_rate,
             'total_pnl': total_pnl,
-            'average_pnl': avg_pnl
+            'average_pnl': avg_pnl,
+            'trades_today': trades_today,
+            'daily_pnl': risk_manager.get_stats().get('daily_pnl', 0.0),
+            'max_trades_per_day': risk_manager.get_stats().get('max_trades_per_day', 5),
+            'trading_halted': risk_manager.trading_halted,
+            'halt_reason': risk_manager.halt_reason
         }
 
     # Nansen Signal Tracking (v3.3)

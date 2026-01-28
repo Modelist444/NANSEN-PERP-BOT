@@ -1,6 +1,6 @@
 """
-Configuration module for ASMM v3.3.1 Pro - High Win Rate Bybit Strategy.
-Optimized for 60%+ win rate with BTC + ETH trading.
+Configuration module for Nansen Smart Money Flow Strategy v4.0.
+Focused on Nansen Accumulation/Distribution signals with strict risk management.
 """
 
 import os
@@ -13,41 +13,48 @@ load_dotenv()
 
 @dataclass
 class Config:
-    """ASMM v3.2 Pro configuration."""
+    """Nansen Smart Money Flow Strategy v4.0 configuration."""
     
     # Strategy Identity
-    strategy_name: str = "ASMM v3.3.1 Pro"
-    strategy_version: str = "3.3.1"
-    target_win_rate: int = 60  # 60%+ target
+    strategy_name: str = "Nansen SMF Strategy"
+    strategy_version: str = "4.0"
+    target_win_rate: int = 55  # 50-55% target
     
     # API Keys
     bybit_api_key: str = os.getenv("BYBIT_API_KEY", "")
     bybit_api_secret: str = os.getenv("BYBIT_API_SECRET", "")
     nansen_api_key: str = os.getenv("NANSEN_API_KEY", "")
     
-    # Trading Pairs (v3.2 Pro: BTC + ETH only)
+    # Trading Pairs (3 high-cap pairs for diversification)
     trading_pairs: List[str] = None
     
     # Capital
-    starting_capital: float = 100.0    # $100 starting capital
+    starting_capital: float = 500.0    # $500 starting capital
     
-    # Risk Management (v3.3 - Conservative with Nansen Mandatory)
-    base_risk_pct: float = 0.02        # 2% standard risk (Tier 2)
-    high_conviction_risk_pct: float = 0.03  # 3% high conviction (Tier 1)
-    max_drawdown_pct: float = 0.15     # 15% hard stop
-    max_consecutive_losses: int = 3    # Pause after 3 losses
-    daily_loss_limit_pct: float = 0.06 # 6% daily limit
-    min_risk_reward: float = 0.1       # Lowered for fast Scalp Demo
+    # ==========================================================================
+    # RISK MANAGEMENT (v4.0 - Strict Rules)
+    # ==========================================================================
+    base_risk_pct: float = 0.02        # 2% per-trade risk (standard)
+    high_conviction_risk_pct: float = 0.03  # 3% per-trade risk (high conviction)
+    max_drawdown_pct: float = 0.15     # 15% max drawdown - auto-pause
+    max_consecutive_losses: int = 3    # Pause after 3 consecutive losses
+    daily_loss_limit_pct: float = 0.10 # 10% daily loss limit
     
-    # Leverage (v3.3 - 3x to 6x range)
-    base_leverage: int = 3             # 3x for standard (Tier 2)
-    high_conviction_leverage: int = 6  # 6x for strong signals (Tier 1)
+    # ==========================================================================
+    # LEVERAGE
+    # ==========================================================================
+    base_leverage: int = 4             # Default 4x leverage
+    high_conviction_leverage: int = 4  # Keep at 4x for safety
     
-    # Timeframes
-    signal_timeframe: str = "4h"       # 4H candle close execution
-    momentum_timeframe: str = "1h"     # 1H for MACD confirmation
+    # ==========================================================================
+    # TIMEFRAMES
+    # ==========================================================================
+    signal_timeframe: str = "1h"       # 1H for primary signal generation
+    momentum_timeframe: str = "15m"    # 15m for entry timing (optional)
     
-    # Indicator Parameters
+    # ==========================================================================
+    # INDICATOR PARAMETERS
+    # ==========================================================================
     ema_fast: int = 20
     ema_slow: int = 50
     rsi_period: int = 14
@@ -57,42 +64,37 @@ class Config:
     adx_period: int = 14
     atr_period: int = 14
     
-    # Signal Requirements (v3.3 - Nansen is MANDATORY)
-    min_signals_required: int = 3      # Need 3/5 for entry
-    nansen_mandatory: bool = True      # Nansen signal MUST be one of the 3+
-    adx_threshold: float = 25.0        # Minimum ADX for trending
+    # ==========================================================================
+    # SIGNAL REQUIREMENTS (v4.0 - Nansen Dominant)
+    # ==========================================================================
+    nansen_signal_weight: int = 2      # Nansen signal has highest priority (Weight=2)
+    nansen_mandatory: bool = True      # Nansen signal MUST be present for entry
     
-    # RSI Thresholds
-    rsi_long_min: int = 50             # RSI 50-70 for LONG
-    rsi_long_max: int = 70
-    rsi_short_min: int = 30            # RSI 30-50 for SHORT
-    rsi_short_max: int = 50
+    # RSI Thresholds (v4.0 - Avoid Overextension)
+    rsi_long_max: int = 70             # Long only if RSI < 70
+    rsi_short_min: int = 30            # Short only if RSI > 30
     
-    # Funding/Positioning Thresholds
-    funding_long_max: float = 0.0005   # <0.05% for LONG
-    funding_short_min: float = 0.0005  # >0.05% for SHORT (crowded)
-    ls_ratio_long_max: float = 1.2     # Long/Short < 1.2 for LONG
-    ls_ratio_short_min: float = 0.8    # Long/Short > 0.8 for SHORT
+    # ==========================================================================
+    # EXIT PARAMETERS (v4.0 - ATR-Based)
+    # ==========================================================================
+    stop_loss_atr_mult: float = 1.5    # Stop Loss = 1.5x ATR
+    take_profit_atr_mult: float = 2.5  # Take Profit = 2.5x ATR
+    trailing_stop_atr_mult: float = 1.0  # Trailing stop = 1x ATR (for 30% position)
+    trailing_position_pct: float = 0.30  # Apply trailing to 30% of position
     
-    # Exit Parameters (v3.3 - Fixed Percentage Based)
-    stop_loss_pct: float = 0.02        # 2% fixed stop loss (Tier 2)
-    stop_loss_pct_high: float = 0.03   # 3% fixed stop loss (Tier 1)
-    tp1_pct: float = 0.005             # TP1 = 0.5% (Very fast for demo)
-    tp2_pct: float = 0.010             # TP2 = 1.0%
-    tp1_close_pct: float = 0.60        # Close 60% at TP1
-    tp2_close_pct: float = 0.40        # Close 40% at TP2
+    # ==========================================================================
+    # EXECUTION LIMITS
+    # ==========================================================================
+    max_concurrent_trades: int = 3     # Max 3 trades (one per pair)
+    max_trades_per_day: int = 5        # Max 5 trades per day
+    min_trade_interval_hours: float = 1.0  # Minimum 1 hour between trades
     
-    # Signal Tracking (v3.3 - Track before live trading)
-    signal_tracking_days: int = 30     # Track Nansen signals for 30 days
-    
-    # Execution
-    max_concurrent_trades: int = 5     # Max 5 trades
-    min_trade_interval_hours: float = 0.005 # ~18 seconds delay
-    
-    # Bot Mode
-    dry_run: bool = False               # LIVE mode (placing orders)
-    use_testnet: bool = True            # USE BYBIT TESTNET
-    loop_interval_seconds: int = 12    # 12 seconds loop (Slower, easier to watch)
+    # ==========================================================================
+    # BOT MODE
+    # ==========================================================================
+    dry_run: bool = False              # LIVE mode (placing orders)
+    use_testnet: bool = True           # USE BYBIT TESTNET
+    loop_interval_seconds: int = 60    # 60 seconds loop (1 minute)
     
     # Dashboard
     dashboard_port: int = 8000
@@ -100,7 +102,7 @@ class Config:
     def __post_init__(self):
         """Parse environment variables."""
         if self.trading_pairs is None:
-            pairs_str = os.getenv("TRADING_PAIRS", "BTCUSDT,ETHUSDT")
+            pairs_str = os.getenv("TRADING_PAIRS", "BTCUSDT,ETHUSDT,SOLUSDT")
             self.trading_pairs = [p.strip() for p in pairs_str.split(",")]
         
         # Override from env
@@ -109,10 +111,11 @@ class Config:
         self.base_risk_pct = float(os.getenv("BASE_RISK_PCT", "2")) / 100
         self.high_conviction_risk_pct = float(os.getenv("HIGH_CONVICTION_RISK_PCT", "3")) / 100
         self.max_drawdown_pct = float(os.getenv("MAX_DRAWDOWN_PCT", "15")) / 100
-        self.daily_loss_limit_pct = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "6")) / 100
-        self.base_leverage = int(os.getenv("BASE_LEVERAGE", "3"))
-        self.high_conviction_leverage = int(os.getenv("HIGH_CONVICTION_LEVERAGE", "6"))
+        self.daily_loss_limit_pct = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "10")) / 100
+        self.base_leverage = int(os.getenv("BASE_LEVERAGE", "4"))
+        self.high_conviction_leverage = int(os.getenv("HIGH_CONVICTION_LEVERAGE", "4"))
         self.starting_capital = float(os.getenv("STARTING_CAPITAL", "100"))
+        self.max_trades_per_day = int(os.getenv("MAX_TRADES_PER_DAY", "5"))
     
     @property
     def all_pairs(self) -> List[str]:

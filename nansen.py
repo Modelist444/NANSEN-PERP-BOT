@@ -1,6 +1,7 @@
 """
 Nansen API client for smart money signals and exchange flow data.
-Provides accumulation/distribution signals for trading decisions.
+Provides accumulation/distribution signals for Nansen SMF Strategy v4.0.
+Key Output: SignalType (ACCUMULATION/DISTRIBUTION/NEUTRAL) + confidence_score (0.0-1.0)
 """
 
 import requests
@@ -24,7 +25,7 @@ class SignalType(Enum):
 
 @dataclass
 class NansenSignal:
-    """Represents a Nansen smart money signal."""
+    """Represents a Nansen smart money signal for v4.0 strategy."""
     token: str
     signal_type: SignalType
     strength: float  # 0.0 to 1.0
@@ -33,12 +34,32 @@ class NansenSignal:
     timestamp: datetime
     
     @property
+    def confidence_score(self) -> float:
+        """Alias for strength - used as confidence score in v4.0."""
+        return self.strength
+    
+    @property
     def is_bullish(self) -> bool:
         return self.signal_type == SignalType.ACCUMULATION
     
     @property
     def is_bearish(self) -> bool:
         return self.signal_type == SignalType.DISTRIBUTION
+    
+    @property
+    def is_neutral(self) -> bool:
+        return self.signal_type == SignalType.NEUTRAL
+    
+    def to_dict(self) -> Dict:
+        """Convert signal to dictionary for logging."""
+        return {
+            'token': self.token,
+            'signal_type': self.signal_type.value,
+            'confidence_score': self.confidence_score,
+            'smart_money_netflow': self.smart_money_netflow,
+            'exchange_netflow': self.exchange_netflow,
+            'timestamp': self.timestamp.isoformat()
+        }
 
 
 @dataclass
@@ -158,6 +179,10 @@ class NansenClient:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
+            if hasattr(e, 'response') and e.response is not None:
+                if e.response.status_code in [404, 403]:
+                    # Gracefully handle missing data/unauthorized
+                    return None
             log_error(f"Nansen API error: {e}", exc_info=False)
             return None
     
@@ -575,7 +600,9 @@ class NansenClient:
             "SOL": "solana",
             "AVAX": "avalanche",
             "LINK": "chainlink",
-            "MATIC": "polygon"
+            "MATIC": "polygon",
+            "BITCOIN": "bitcoin",
+            "ETHEREUM": "ethereum"
         }
         return token_map.get(token.upper().replace("USDT", ""), token.lower())
 

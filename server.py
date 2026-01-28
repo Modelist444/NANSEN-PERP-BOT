@@ -137,9 +137,7 @@ async def get_dashboard_data() -> Dict[str, Any]:
             'config': {
                 'dry_run': config.dry_run,
                 'pairs': config.all_pairs,
-                'risk_per_trade': config.risk_per_trade,
-                'tp1_pct': config.tp1_pct,
-                'tp2_pct': config.tp2_pct
+                'risk_per_trade': config.risk_per_trade
             }
         }
     except Exception as e:
@@ -231,11 +229,13 @@ if DASHBOARD_DIR.exists():
 
 def run_server():
     """Run the dashboard server."""
-    log_info(f"Starting dashboard server on port {config.dashboard_port}")
+    import os
+    port = int(os.environ.get("PORT", config.dashboard_port))
+    log_info(f"Starting dashboard server on port {port}")
     uvicorn.run(
         app, 
         host="0.0.0.0", 
-        port=config.dashboard_port,
+        port=port,
         log_level="info"
     )
 

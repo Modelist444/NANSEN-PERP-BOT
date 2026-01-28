@@ -1,11 +1,14 @@
 """
 Nansen Perp Trading Bot - Main Entry Point
-Orchestrates the trading loop with Nansen signals and exchange execution.
+Nansen SMF Strategy v4.0: Orchestrates the trading loop with Nansen signals and exchange execution.
 """
 
 import time
 import signal
 import sys
+import json
+import csv
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -21,12 +24,13 @@ import threading
 
 
 class TradingBot:
-    """Main trading bot orchestrator."""
+    """Main trading bot orchestrator for Nansen SMF Strategy v4.0."""
 
     def __init__(self):
         """Initialize the bot."""
         self.running = False
         self._setup_signal_handlers()
+        self._ensure_data_dirs()
     
     def _setup_signal_handlers(self):
         """Set up graceful shutdown handlers."""
@@ -37,6 +41,11 @@ class TradingBot:
         """Handle shutdown signals."""
         log_info("\nShutdown signal received, stopping bot...")
         self.running = False
+    
+    def _ensure_data_dirs(self):
+        """Ensure data directories exist for logging."""
+        os.makedirs('data', exist_ok=True)
+        os.makedirs('logs', exist_ok=True)
     
     def _record_equity_snapshot(self):
         """Record current equity for the equity curve."""
@@ -63,7 +72,7 @@ class TradingBot:
             log_error(f"Error recording equity snapshot: {e}")
 
     def _log_all_nansen_signals(self):
-        """Log Nansen signals for all tracked pairs (v3.3 30-day tracking)."""
+        """Log Nansen signals for all tracked pairs."""
         try:
             for symbol in config.trading_pairs:
                 nansen_signal = nansen_client.get_signal(symbol)
@@ -90,7 +99,46 @@ class TradingBot:
         except Exception as e:
             log_error(f"Error logging Nansen signals: {e}")
 
+    def _log_trade_to_csv(self, trade_data: dict):
+        """Log trade to CSV file for auditability."""
+        csv_path = 'data/trades.csv'
+        file_exists = os.path.exists(csv_path)
+        
+        try:
+            with open(csv_path, 'a', newline='') as f:
+                fieldnames = [
+                    'timestamp', 'symbol', 'direction', 'confidence_score',
+                    'entry_price', 'stop_loss', 'take_profit', 'position_size',
+                    'leverage', 'risk_pct', 'status', 'pnl', 'drawdown'
+                ]
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                
+                if not file_exists:
+                    writer.writeheader()
+                
+                writer.writerow(trade_data)
+                
+        except Exception as e:
+            log_error(f"Error writing to trades CSV: {e}")
     
+    def _log_trade_to_json(self, trade_data: dict):
+        """Log trade to JSON file for auditability."""
+        json_path = 'data/trades.json'
+        
+        try:
+            trades = []
+            if os.path.exists(json_path):
+                with open(json_path, 'r') as f:
+                    trades = json.load(f)
+            
+            trades.append(trade_data)
+            
+            with open(json_path, 'w') as f:
+                json.dump(trades, f, indent=2)
+                
+        except Exception as e:
+            log_error(f"Error writing to trades JSON: {e}")
+
     def _create_alert(
         self, 
         alert_type: str, 
@@ -112,7 +160,7 @@ class TradingBot:
         log_info(f"ALERT [{alert_type}] {symbol}: {message}")
     
     def _check_open_positions(self):
-        """Monitor open positions for ASMM exit rules (TP1, Trailing, Early Exit)."""
+        """Monitor open positions for exit rules (SL, TP, Early Exit)."""
         db_trades = db.get_open_trades()
         
         for trade in db_trades:
@@ -120,17 +168,21 @@ class TradingBot:
             if not current_price:
                 continue
             
-            # 1. Early Exit Check (Smart Money distribution or Extreme Funding)
+            # 1. Early Exit Check (Nansen signal reversal)
             should_exit, reason = trading_strategy.check_early_exit(trade.symbol, trade)
             if should_exit:
                 self._create_alert('early_exit', trade.symbol, f"Early exit: {reason}")
                 exchange_client.cancel_all_orders(trade.symbol)
-                exchange_client.place_market_order(trade.symbol, 
-                                               OrderSide.SELL if trade.direction == 'long' else OrderSide.BUY,
-                                               trade.position_size, reduce_only=True)
+                exchange_client.place_market_order(
+                    trade.symbol, 
+                    OrderSide.SELL if trade.direction == 'long' else OrderSide.BUY,
+                    trade.position_size, 
+                    reduce_only=True
+                )
                 pnl = db.close_trade(trade.id, current_price, 'closed_early')
                 if pnl:
                     risk_manager.update_daily_pnl(pnl)
+                    risk_manager.record_trade_result(trade.symbol, pnl, exchange_client.get_total_equity())
                 risk_manager.close_position_record(trade.symbol)
                 log_info(f"Early exit for {trade.symbol}: {reason} | PnL: {pnl:.2f}")
                 continue
@@ -142,57 +194,20 @@ class TradingBot:
                 pnl = db.close_trade(trade.id, current_price, 'closed_sl')
                 if pnl:
                     risk_manager.update_daily_pnl(pnl)
+                    risk_manager.record_trade_result(trade.symbol, pnl, exchange_client.get_total_equity())
                 risk_manager.close_position_record(trade.symbol)
-                # If not dry run, Bybit should have closed it, but we ensure state is clean
                 if not config.dry_run:
                     exchange_client.cancel_all_orders(trade.symbol)
                 continue
 
-            # 3. Partial Take Profit (TP1)
-            if not trade.tp1_hit:
-                is_tp1_hit = (current_price >= trade.take_profit if trade.direction == 'long' else current_price <= trade.take_profit)
-                if is_tp1_hit:
-                    close_pct = config.tp1_close_pct
-                    log_info(f"{trade.symbol}: TP1 hit! Closing {close_pct*100:.0f}% and moving stop to breakeven.")
-                    
-                    tp_size = trade.position_size * (close_pct / (1.0 if not trade.tp1_hit else 0.4)) # This is tricky since trade.position_size might be full
-                    # Actually, trade.position_size in DB is updated when closed.
-                    # If it's the first time TP1 is hit:
-                    close_size = trade.position_size * close_pct
-                    remaining_size = trade.position_size - close_size
-                    
-                    # Close TP1 portion
-                    exchange_client.place_market_order(trade.symbol, 
-                                                   OrderSide.SELL if trade.direction == 'long' else OrderSide.BUY,
-                                                   close_size, reduce_only=True)
-                    
-                    # Update Stop Loss to Breakeven (0.5% buffer)
-                    new_stop = trade.entry_price * 1.005 if trade.direction == 'long' else trade.entry_price * 0.995
-                    exchange_client.cancel_all_orders(trade.symbol) # Clear old TP/SL
-                    
-                    sl_side = OrderSide.SELL if trade.direction == 'long' else OrderSide.BUY
-                    exchange_client.place_stop_loss(trade.symbol, sl_side, remaining_size, new_stop)
-                    exchange_client.place_take_profit(trade.symbol, sl_side, remaining_size, trade.take_profit_2)
-
-                    # Update Database
-                    db.update_trade(trade.id, tp1_hit=1, stop_loss=new_stop, position_size=remaining_size)
-                    
-                    # Track Partial PnL
-                    if trade.direction == 'long':
-                        pnl_partial = (current_price - trade.entry_price) * close_size
-                    else:
-                        pnl_partial = (trade.entry_price - current_price) * close_size
-                    risk_manager.update_daily_pnl(pnl_partial)
-                    
-                    self._create_alert('tp_partial', trade.symbol, f"TP1 hit! Closed {close_pct*100:.0f}% at {current_price:.2f}, stop to breakeven. PnL: {pnl_partial:.2f}")
-            
-            # 4. Final Take Profit (TP2 - 3R+)
-            is_tp2_hit = (current_price >= trade.take_profit_2 if trade.direction == 'long' else current_price <= trade.take_profit_2)
-            if is_tp2_hit:
-                self._create_alert('tp_reached', trade.symbol, f"Final Take Profit reached at {current_price:.2f}")
+            # 3. Take Profit Check
+            is_tp_hit = (current_price >= trade.take_profit if trade.direction == 'long' else current_price <= trade.take_profit)
+            if is_tp_hit:
+                self._create_alert('tp_reached', trade.symbol, f"Take Profit reached at {current_price:.2f}")
                 pnl = db.close_trade(trade.id, current_price, 'closed_tp')
                 if pnl:
                     risk_manager.update_daily_pnl(pnl)
+                    risk_manager.record_trade_result(trade.symbol, pnl, exchange_client.get_total_equity())
                 risk_manager.close_position_record(trade.symbol)
                 if not config.dry_run:
                     exchange_client.cancel_all_orders(trade.symbol)
@@ -205,14 +220,16 @@ class TradingBot:
             True if a trade was executed
         """
         # Check if we can trade this symbol
-        if not risk_manager.can_trade(symbol):
+        can_trade, reason = risk_manager.can_trade(symbol)
+        if not can_trade:
+            log_info(f"{symbol}: Cannot trade - {reason}")
             return False
         
         # Check if already has position
         if risk_manager.has_position(symbol):
             return False
         
-        # Generate signal
+        # Generate signal using v4.0 strategy
         signal = trading_strategy.generate_signal(symbol, account_equity)
         
         if not signal:
@@ -223,7 +240,7 @@ class TradingBot:
             symbol=signal.symbol,
             entry_price=signal.entry_price,
             stop_loss=signal.stop_loss,
-            take_profit=signal.take_profit_1, # Check against TP1 for RR
+            take_profit=signal.take_profit,
             position_size=signal.position_size,
             account_equity=account_equity
         )
@@ -233,7 +250,6 @@ class TradingBot:
             return False
         
         # Execute trade
-        # v3.3: Set tiered leverage before entry
         exchange_client.set_leverage(signal.symbol, signal.leverage)
         
         side = OrderSide.BUY if signal.direction == TradeDirection.LONG else OrderSide.SELL
@@ -248,7 +264,7 @@ class TradingBot:
             log_error(f"{symbol}: Failed to place entry order")
             return False
         
-        # Place stop loss
+        # Place stop loss (1.5x ATR)
         sl_side = OrderSide.SELL if signal.direction == TradeDirection.LONG else OrderSide.BUY
         exchange_client.place_stop_loss(
             symbol=signal.symbol,
@@ -257,18 +273,12 @@ class TradingBot:
             stop_price=signal.stop_loss
         )
         
-        # Place take profits (TP1 and TP2)
+        # Place take profit (2.5x ATR)
         exchange_client.place_take_profit(
             symbol=signal.symbol,
             side=sl_side,
-            quantity=signal.position_size * config.tp1_close_pct, 
-            tp_price=signal.take_profit_1
-        )
-        exchange_client.place_take_profit(
-            symbol=signal.symbol,
-            side=sl_side,
-            quantity=signal.position_size * config.tp2_close_pct,
-            tp_price=signal.take_profit_2
+            quantity=signal.position_size,
+            tp_price=signal.take_profit
         )
         
         # Record in database
@@ -279,8 +289,8 @@ class TradingBot:
             entry_price=entry_order.price,
             exit_price=None,
             stop_loss=signal.stop_loss,
-            take_profit=signal.take_profit_1,
-            take_profit_2=signal.take_profit_2,
+            take_profit=signal.take_profit,
+            take_profit_2=signal.trailing_stop,
             position_size=signal.position_size,
             entry_time=datetime.now(),
             exit_time=None,
@@ -288,7 +298,14 @@ class TradingBot:
             pnl_percent=None,
             status='open',
             tp1_hit=False,
-            nansen_signal_strength=signal.nansen_signal.strength if signal.nansen_signal else 0.0
+            nansen_signal_strength=signal.signals.confidence_score,
+            acc_balance_at_entry=signal.account_balance,
+            leverage=signal.leverage,
+            risk_pct=signal.risk_pct,
+            atr_stop_dist=signal.stop_distance_atr,
+            fees=0.0, # Will update on exit
+            slippage=0.0,
+            audit_data=signal.to_dict()
         )
         db.insert_trade(trade)
         
@@ -299,15 +316,35 @@ class TradingBot:
             entry_price=entry_order.price,
             position_size=signal.position_size,
             conviction=signal.conviction,
-            signal_count=signal.signal_count
+            stop_loss=signal.stop_loss,
+            take_profit=signal.take_profit
         )
         
+        # Log trade for auditability
+        trade_log = {
+            'timestamp': datetime.now().isoformat(),
+            'symbol': signal.symbol,
+            'direction': signal.direction.value,
+            'confidence_score': signal.signals.confidence_score,
+            'entry_price': entry_order.price,
+            'stop_loss': signal.stop_loss,
+            'take_profit': signal.take_profit,
+            'position_size': signal.position_size,
+            'leverage': signal.leverage,
+            'risk_pct': signal.risk_pct * 100,
+            'status': 'open',
+            'pnl': None,
+            'drawdown': 0
+        }
+        self._log_trade_to_csv(trade_log)
+        self._log_trade_to_json(trade_log)
+        
         # Create alert for strong signal
-        if signal.nansen_signal and signal.nansen_signal.strength >= 0.7:
+        if signal.signals.confidence_score >= 0.7:
             self._create_alert(
                 'strong_signal',
                 symbol,
-                f"Strong {signal.direction.value} signal (strength: {signal.nansen_signal.strength:.2f})",
+                f"Strong {signal.direction.value} signal (confidence: {signal.signals.confidence_score:.2f})",
                 signal.to_dict()
             )
         
@@ -318,7 +355,7 @@ class TradingBot:
             quantity=signal.position_size,
             price=entry_order.price,
             stop_loss=signal.stop_loss,
-            take_profit=signal.take_profit_1
+            take_profit=signal.take_profit
         )
         
         return True
@@ -329,26 +366,25 @@ class TradingBot:
         dashboard_thread = threading.Thread(target=run_server, daemon=True)
         dashboard_thread.start()
         log_info(f"Dashboard available at: http://localhost:{config.dashboard_port}")
-        log_info("=" * 50)
-        log_info("Nansen Perp Trading Bot Starting")
+        log_info("=" * 60)
+        log_info(f"  {config.strategy_name} v{config.strategy_version}")
+        log_info("=" * 60)
         log_info(f"Mode: {'DRY RUN' if config.dry_run else 'LIVE TRADING'}")
+        log_info(f"Testnet: {config.use_testnet}")
         log_info(f"Pairs: {config.all_pairs}")
         log_info(f"Timeframe: {config.timeframe}")
         log_info(f"Risk per trade: {config.risk_per_trade * 100:.1f}%")
-        log_info("=" * 50)
+        log_info(f"Max trades/day: {config.max_trades_per_day}")
+        log_info(f"Leverage: {config.base_leverage}x")
+        log_info(f"SL: {config.stop_loss_atr_mult}x ATR | TP: {config.take_profit_atr_mult}x ATR")
+        log_info("=" * 60)
         
-        if not config.dry_run:
-            log_warning("⚠️  LIVE TRADING MODE - Real orders will be placed!")
-            time.sleep(3)
-        
-        # Signal Tracking (v3.3 - Displaying status only, enforcement removed)
-        first_signal = db.get_first_signal_timestamp()
-        if first_signal:
-            days_tracked = (datetime.now() - first_signal).days
-            log_info(f"📊 Signal Tracking Status: {days_tracked} days of data recorded.")
-        else:
-            log_info(f"📊 Signal Tracking: No historical data found.")
-
+        if not config.dry_run and not config.use_testnet:
+            log_warning("⚠️  LIVE MAINNET TRADING - Real orders will be placed!")
+            time.sleep(5)
+        elif not config.dry_run and config.use_testnet:
+            log_info("🧪 TESTNET LIVE TRADING - Orders will be placed on testnet")
+            time.sleep(2)
         
         self.running = True
         cycle_count = 0
@@ -361,26 +397,28 @@ class TradingBot:
                 # Get current equity
                 account_equity = exchange_client.get_total_equity()
                 if account_equity <= 0:
-                    log_warning("Unable to fetch account equity, skipping cycle")
-                    time.sleep(60)
-                    continue
+                    log_warning(f"Account equity is {account_equity}. Ensure your Bybit Testnet account is funded.")
                 
                 log_info(f"Account equity: ${account_equity:,.2f}")
                 
-                # v3.3: Check circuit breakers (Daily Loss 6%, Drawdown 15%, etc.)
+                # Get risk stats
+                stats = risk_manager.get_stats()
+                log_info(f"Trades today: {stats['trades_today']}/{stats['max_trades_per_day']} | "
+                         f"Active: {stats['active_positions']}/{config.max_concurrent_trades}")
+                
+                # Check circuit breakers
                 can_trade, reason = risk_manager.check_circuit_breakers(account_equity)
                 if not can_trade:
-                    log_warning(f"CIRCUIT BREAKER TRIGGERED: {reason}")
+                    log_warning(f"CIRCUIT BREAKER: {reason}")
                     self._create_alert('circuit_breaker', 'GLOBAL', reason)
-                    # We don't stop the loop (to allow exit management), but can_trade() will block entries
                 
-                # Check existing positions
+                # Check existing positions for exits
                 self._check_open_positions()
                 
-                # Record equity snapshot every cycle
+                # Record equity snapshot
                 self._record_equity_snapshot()
                 
-                # Log Nansen signals for v3.3 tracking
+                # Log Nansen signals for tracking
                 self._log_all_nansen_signals()
                 
                 # Process each trading pair
@@ -388,7 +426,7 @@ class TradingBot:
                     try:
                         traded = self._process_symbol(symbol, account_equity)
                         if traded:
-                            log_info(f"Trade executed for {symbol}")
+                            log_info(f"✅ Trade executed for {symbol}")
                     except Exception as e:
                         log_error(f"Error processing {symbol}: {e}")
                 

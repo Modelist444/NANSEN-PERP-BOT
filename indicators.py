@@ -1,6 +1,6 @@
 """
-Technical Indicators Module for ASMM v3.2 Pro.
-Provides EMA, RSI, MACD, ADX, ATR calculations for signal generation.
+Technical Indicators Module for Nansen SMF Strategy v4.0.
+Provides EMA, RSI, MACD, ADX, ATR calculations and trend direction analysis.
 """
 
 import pandas as pd
@@ -160,7 +160,7 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 def calculate_all_indicators(df: pd.DataFrame) -> Dict[str, Any]:
     """
-    Calculate all indicators needed for ASMM v3.2 Pro.
+    Calculate all indicators needed for Nansen SMF Strategy v4.0.
     
     Args:
         df: OHLCV DataFrame with at least 100 candles
@@ -202,36 +202,70 @@ def calculate_all_indicators(df: pd.DataFrame) -> Dict[str, Any]:
     }
 
 
+# =============================================================================
+# TREND DIRECTION (v4.0 - For EMA Alignment Filter)
+# =============================================================================
+
+def get_trend_direction(indicators: Dict) -> str:
+    """
+    Determine trend direction based on EMA structure.
+    
+    Returns:
+        'uptrend': Price > EMA20 > EMA50
+        'downtrend': Price < EMA20 < EMA50
+        'neutral': No clear trend
+    """
+    price = indicators.get('price', 0)
+    ema_20 = indicators.get('ema_20', 0)
+    ema_50 = indicators.get('ema_50', 0)
+    
+    if price > ema_20 > ema_50:
+        return 'uptrend'
+    elif price < ema_20 < ema_50:
+        return 'downtrend'
+    else:
+        return 'neutral'
+
+
 def is_ema_bullish(indicators: Dict) -> bool:
-    """Check if EMAs show bullish structure."""
-    return (
-        indicators['price'] > indicators['ema_20'] and
-        indicators['price'] > indicators['ema_50'] and
-        indicators['ema_20'] > indicators['ema_50'] and
-        indicators['ema_20'] > indicators['ema_20_prev'] and
-        indicators['ema_50'] > indicators['ema_50_prev']
-    )
+    """Check if EMAs show bullish structure (uptrend)."""
+    return get_trend_direction(indicators) == 'uptrend'
 
 
 def is_ema_bearish(indicators: Dict) -> bool:
-    """Check if EMAs show bearish structure."""
-    return (
-        indicators['price'] < indicators['ema_20'] and
-        indicators['price'] < indicators['ema_50'] and
-        indicators['ema_20'] < indicators['ema_50'] and
-        indicators['ema_20'] < indicators['ema_20_prev'] and
-        indicators['ema_50'] < indicators['ema_50_prev']
-    )
+    """Check if EMAs show bearish structure (downtrend)."""
+    return get_trend_direction(indicators) == 'downtrend'
 
 
+# =============================================================================
+# RSI FILTERS (v4.0 - Avoid Overextension)
+# =============================================================================
+
+def is_rsi_valid_for_long(rsi: float) -> bool:
+    """
+    Check if RSI allows a LONG entry.
+    v4.0 Rule: Only enter LONG if RSI < 70 (not overbought).
+    """
+    return rsi < config.rsi_long_max
+
+
+def is_rsi_valid_for_short(rsi: float) -> bool:
+    """
+    Check if RSI allows a SHORT entry.
+    v4.0 Rule: Only enter SHORT if RSI > 30 (not oversold).
+    """
+    return rsi > config.rsi_short_min
+
+
+# Legacy functions for backward compatibility
 def is_rsi_bullish(rsi: float) -> bool:
-    """Check if RSI is in bullish zone (50-70)."""
-    return config.rsi_long_min <= rsi <= config.rsi_long_max
+    """Check if RSI is in bullish zone (deprecated, use is_rsi_valid_for_long)."""
+    return is_rsi_valid_for_long(rsi)
 
 
 def is_rsi_bearish(rsi: float) -> bool:
-    """Check if RSI is in bearish zone (30-50)."""
-    return config.rsi_short_min <= rsi <= config.rsi_short_max
+    """Check if RSI is in bearish zone (deprecated, use is_rsi_valid_for_short)."""
+    return is_rsi_valid_for_short(rsi)
 
 
 def is_macd_bullish(macd: float, macd_signal: float) -> bool:
@@ -244,6 +278,6 @@ def is_macd_bearish(macd: float, macd_signal: float) -> bool:
     return macd < macd_signal and macd < 0
 
 
-def is_trending(adx: float) -> bool:
-    """Check if market is trending (ADX > 25)."""
-    return adx > config.adx_threshold
+def is_trending(adx: float, threshold: float = 25.0) -> bool:
+    """Check if market is trending (ADX > threshold)."""
+    return adx > threshold

@@ -78,7 +78,8 @@ class BybitFuturesClient:
                 'enableRateLimit': True,
                 'options': {
                     'defaultType': 'swap',
-                    'adjustForTimeDifference': True
+                    'adjustForTimeDifference': True,
+                    'recvWindow': 30000
                 }
             })
         else:

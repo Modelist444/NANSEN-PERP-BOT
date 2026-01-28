@@ -1,15 +1,14 @@
 """
-Risk management module for ASMM v3.2 Pro.
-Implements aggressive sizing, circuit breakers, and win rate tracking.
+Risk management module for Nansen SMF Strategy v4.0.
+Implements strict risk rules, circuit breakers, and max trades per day.
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
 
 from config import config
 from logger import log_info, log_warning, log_debug, log_error
-from database import db
 
 
 @dataclass
@@ -21,24 +20,28 @@ class TradeRecord:
     entry_price: float
     position_size: float
     conviction: str
-    signal_count: int
+    stop_loss: float
+    take_profit: float
 
 
 class RiskManager:
     """
-    ASMM v3.2 Pro Risk Manager.
+    Nansen SMF Strategy v4.0 Risk Manager.
     
-    Circuit Breakers:
-    - 15% max drawdown (hard stop)
-    - 3 consecutive losses (pause)
-    - 10% daily loss limit
-    - Win rate < 50% after 10 trades (review required)
+    RISK RULES:
+    - Per-trade risk: 2-3% of account
+    - Max drawdown: 15% (auto-pause)
+    - Max consecutive losses: 3 (pause)
+    - Daily loss limit: 10%
+    - Max trades per day: 5
+    - Max concurrent trades: 3 (one per pair for diversification)
     """
     
     def __init__(self):
         # Trade tracking
         self._last_trade: Dict[str, datetime] = {}
         self._active_positions: Dict[str, TradeRecord] = {}
+        self._trades_today: int = 0
         
         # P&L tracking
         self._daily_pl: float = 0.0
@@ -70,30 +73,30 @@ class RiskManager:
         self._check_daily_reset()
         
         # 1. Max drawdown: 15%
-        drawdown_pct = ((self._peak_capital - account_equity) / self._peak_capital) * 100
-        if drawdown_pct >= config.max_drawdown_pct * 100:
-            self.trading_halted = True
-            self.halt_reason = f"Max drawdown: {drawdown_pct:.1f}%"
-            return False, self.halt_reason
+        if self._peak_capital > 0:
+            drawdown_pct = ((self._peak_capital - account_equity) / self._peak_capital)
+            if drawdown_pct >= config.max_drawdown_pct:
+                self.trading_halted = True
+                self.halt_reason = f"Max drawdown: {drawdown_pct*100:.1f}%"
+                log_warning(f"CIRCUIT BREAKER: {self.halt_reason}")
+                return False, self.halt_reason
         
         # 2. Consecutive losses: 3
         if self.consecutive_losses >= config.max_consecutive_losses:
             self.trading_halted = True
             self.halt_reason = f"{self.consecutive_losses} consecutive losses - Review strategy"
+            log_warning(f"CIRCUIT BREAKER: {self.halt_reason}")
             return False, self.halt_reason
         
-        # 3. Daily loss limit: 6% (v3.3)
-        daily_loss_pct = (self._daily_pl / account_equity) * 100
-        if daily_loss_pct <= -config.daily_loss_limit_pct * 100:
-            return False, f"Daily loss limit: {daily_loss_pct:.1f}%"
+        # 3. Daily loss limit: 10%
+        if account_equity > 0:
+            daily_loss_pct = (self._daily_pl / account_equity)
+            if daily_loss_pct <= -config.daily_loss_limit_pct:
+                return False, f"Daily loss limit: {daily_loss_pct*100:.1f}%"
         
-        # 4. Win rate check after 10 trades
-        total_trades = self.wins + self.losses
-        if total_trades >= 10:
-            win_rate = self.calculate_win_rate()
-            if win_rate < 50:
-                log_warning(f"Win rate {win_rate:.1f}% below 60% target after {total_trades} trades")
-                # Don't halt, just warn
+        # 4. Max trades per day
+        if self._trades_today >= config.max_trades_per_day:
+            return False, f"Max trades per day ({config.max_trades_per_day}) reached"
         
         # 5. Check if halted
         if self.trading_halted:
@@ -103,30 +106,28 @@ class RiskManager:
     
     def can_trade(self, symbol: str) -> Tuple[bool, str]:
         """Check if we can trade this symbol."""
-        # v3.3: Enforce circuit breakers (Daily Loss Limit, Max Drawdown, etc.)
-        # We need account equity for some checks. 
-        # But wait, check_circuit_breakers is usually called manually in main.py.
-        # Let's see if we should call it here too for safety.
-        # Actually, let's just check if trading is halted.
         if self.trading_halted:
             return False, f"Trading halted: {self.halt_reason}"
-
-        # v3.3: (30-day tracking enforcement removed per user request)
 
         # Check cooldown
         if symbol in self._last_trade:
             last_time = self._last_trade[symbol]
             cooldown = timedelta(hours=config.min_trade_interval_hours)
             if datetime.now() - last_time < cooldown:
-                return False, f"Trade cooldown active"
+                remaining = (last_time + cooldown) - datetime.now()
+                return False, f"Trade cooldown: {remaining.seconds // 60}m remaining"
         
-        # Check existing position
+        # Check existing position (one per pair for diversification)
         if symbol in self._active_positions:
-            return False, "Already has active position"
+            return False, "Already has active position for this pair"
         
         # Check max concurrent trades
         if len(self._active_positions) >= config.max_concurrent_trades:
             return False, f"Max concurrent trades ({config.max_concurrent_trades})"
+        
+        # Check max trades per day
+        if self._trades_today >= config.max_trades_per_day:
+            return False, f"Max trades per day ({config.max_trades_per_day})"
         
         return True, "OK"
     
@@ -137,11 +138,14 @@ class RiskManager:
         entry_price: float,
         position_size: float,
         conviction: str,
-        signal_count: int
+        stop_loss: float,
+        take_profit: float
     ):
         """Record a new trade."""
         now = datetime.now()
         self._last_trade[symbol] = now
+        self._trades_today += 1
+        
         self._active_positions[symbol] = TradeRecord(
             symbol=symbol,
             timestamp=now,
@@ -149,9 +153,10 @@ class RiskManager:
             entry_price=entry_price,
             position_size=position_size,
             conviction=conviction,
-            signal_count=signal_count
+            stop_loss=stop_loss,
+            take_profit=take_profit
         )
-        log_info(f"Recorded {conviction} trade for {symbol} ({signal_count}/5 signals)")
+        log_info(f"Recorded {conviction} {direction.upper()} trade for {symbol}")
     
     def record_trade_result(self, symbol: str, pnl: float, account_equity: float):
         """Record trade result and update stats."""
@@ -193,17 +198,19 @@ class RiskManager:
         return self._active_positions.get(symbol)
     
     def _check_daily_reset(self):
-        """Reset daily P/L at midnight."""
+        """Reset daily stats at midnight."""
         now = datetime.now()
         if now.date() > self._last_stats_reset.date():
-            log_info(f"Daily reset. Previous P/L: ${self._daily_pl:.2f}")
+            log_info(f"Daily reset. Previous P/L: ${self._daily_pl:.2f}, Trades: {self._trades_today}")
             self._daily_pl = 0.0
+            self._trades_today = 0
             self._last_stats_reset = now
             
-            # Reset trading halt on new day (but keep consecutive losses)
+            # Reset daily halt triggers on new day
             if self.trading_halted and "daily" in self.halt_reason.lower():
                 self.trading_halted = False
                 self.halt_reason = ""
+                log_info("Daily halt reset - new trading day")
     
     def get_stats(self) -> Dict:
         """Get current stats."""
@@ -217,7 +224,9 @@ class RiskManager:
             'peak_capital': self._peak_capital,
             'trading_halted': self.trading_halted,
             'halt_reason': self.halt_reason,
-            'active_positions': len(self._active_positions)
+            'active_positions': len(self._active_positions),
+            'trades_today': self._trades_today,
+            'max_trades_per_day': config.max_trades_per_day
         }
     
     def validate_trade(
@@ -240,13 +249,15 @@ class RiskManager:
         if not can_trade:
             return False, reason
         
-        # Check risk-reward
+        # Check risk-reward ratio (should be >= 1.67 for our 1.5x SL / 2.5x TP)
         risk = abs(entry_price - stop_loss)
         reward = abs(take_profit - entry_price)
         rr = reward / risk if risk > 0 else 0
         
-        if rr < config.min_risk_reward:
-            return False, f"R:R {rr:.2f} below minimum {config.min_risk_reward}"
+        # ATR-based targets should give us ~1.67 R:R (2.5 / 1.5)
+        min_rr = 1.0  # Minimum acceptable R:R
+        if rr < min_rr:
+            return False, f"R:R {rr:.2f} below minimum {min_rr}"
         
         return True, "OK"
     
