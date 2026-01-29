@@ -76,12 +76,27 @@ class BybitFuturesClient:
                 'secret': self.api_secret,
                 'sandbox': config.use_testnet,
                 'enableRateLimit': True,
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
                 'options': {
                     'defaultType': 'swap',
                     'adjustForTimeDifference': True,
-                    'recvWindow': 30000
+                    'recvWindow': 30000,
+                    # v4.1: Use Bybit mirror to bypass CloudFront blocks on cloud providers
+                    'brokerId': 'Bybit',
+                    'api-testnet': 'https://api-testnet.bytick.com',
+                    'api': 'https://api.bytick.com'
                 }
             })
+            
+            # Explicitly override URLs to use the bytick mirror
+            if config.use_testnet:
+                self.exchange.urls['api']['public'] = 'https://api-testnet.bytick.com'
+                self.exchange.urls['api']['private'] = 'https://api-testnet.bytick.com'
+            else:
+                self.exchange.urls['api']['public'] = 'https://api.bytick.com'
+                self.exchange.urls['api']['private'] = 'https://api.bytick.com'
         else:
             self.exchange = None
             log_info("🔑 API Keys missing or Dry Run: ENTERING FULL SIMULATION MODE")
