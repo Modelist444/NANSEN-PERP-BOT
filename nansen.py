@@ -353,7 +353,19 @@ class NansenClient:
         exchange_data = self.get_exchange_flow(token)
         
         if not netflow_data or not exchange_data:
-            log_debug(f"Unable to fetch Nansen data for {token}")
+            log_info(f"⚠️ Nansen Data Missing for {token} (Netflow: {bool(netflow_data)}, Exchange: {bool(exchange_data)})")
+            
+            # Fallback for TESTING only
+            if os.getenv("NANSEN_DEBUG_FALLBACK", "false").lower() == "true":
+                log_info(f"🧪 [DEBUG] Injecting Fallback Signal for {token}")
+                return NansenSignal(
+                    token=token,
+                    signal_type=SignalType.ACCUMULATION,
+                    strength=0.8,
+                    smart_money_netflow=1000000.0,
+                    exchange_netflow=-500000.0,
+                    timestamp=datetime.now()
+                )
             return None
         
         try:
