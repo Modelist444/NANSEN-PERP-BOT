@@ -9,6 +9,7 @@ import random
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 import time
+import os
 from dataclasses import dataclass
 from enum import Enum
 
@@ -352,8 +353,8 @@ class NansenClient:
         netflow_data = self.get_smart_money_netflow(token)
         exchange_data = self.get_exchange_flow(token)
         
-        if not netflow_data or not exchange_data:
-            log_info(f"⚠️ Nansen Data Missing for {token} (Netflow: {bool(netflow_data)}, Exchange: {bool(exchange_data)})")
+        if not netflow_data:
+            log_info(f"⚠️ Nansen Data Missing for {token} (Netflow: False, Exchange: {bool(exchange_data)})")
             
             # Fallback for TESTING only
             if os.getenv("NANSEN_DEBUG_FALLBACK", "false").lower() == "true":
@@ -373,9 +374,16 @@ class NansenClient:
             smart_money_netflow = netflow_data.get("netflow", 0)
             
             # Parse exchange flow (negative = coins leaving exchanges = bullish)
-            exchange_inflow = exchange_data.get("inflow", 0)
-            exchange_outflow = exchange_data.get("outflow", 0)
-            exchange_netflow = exchange_inflow - exchange_outflow
+            # v4.3.1: Handle missing exchange flow gracefully (API 404s)
+            exchange_netflow = 0
+            if exchange_data:
+                exchange_inflow = exchange_data.get("inflow", 0)
+                exchange_outflow = exchange_data.get("outflow", 0)
+                exchange_netflow = exchange_inflow - exchange_outflow
+            else:
+                log_info(f"ℹ️ {token}: Using Netflow only (Exchange Flow unavailable)")
+            
+            # Determine signal type and strength
             
             # Determine signal type and strength
             signal_type = SignalType.NEUTRAL
