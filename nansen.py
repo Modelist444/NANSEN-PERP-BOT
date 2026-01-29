@@ -176,14 +176,14 @@ class NansenClient:
         try:
             url = f"{self.BASE_URL}{endpoint}"
             response = self.session.get(url, params=params, timeout=30)
-            response.raise_for_status()
+            
+            if response.status_code != 200:
+                log_error(f"❌ Nansen API Error [{response.status_code}] for {endpoint}: {response.text}")
+                return None
+                
             return response.json()
         except requests.exceptions.RequestException as e:
-            if hasattr(e, 'response') and e.response is not None:
-                if e.response.status_code in [404, 403]:
-                    # Gracefully handle missing data/unauthorized
-                    return None
-            log_error(f"Nansen API error: {e}", exc_info=False)
+            log_error(f"❌ Nansen request failed: {e}")
             return None
     
     def _get_cached(self, key: str) -> Optional[Any]:
