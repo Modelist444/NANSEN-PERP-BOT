@@ -56,6 +56,29 @@ class ConnectionManager:
             self.disconnect(conn)
 
 
+
+class SharedState:
+    """Shared state between trading bot and dashboard server."""
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(SharedState, cls).__new__(cls)
+            cls._instance.last_heartbeat = datetime.now()
+            cls._instance.bot_status = "initializing"
+        return cls._instance
+    
+    def update_heartbeat(self):
+        """Update heartbeat timestamp."""
+        self.last_heartbeat = datetime.now()
+        
+    def set_status(self, status: str):
+        """Update bot status."""
+        self.bot_status = status
+
+# Global shared state
+shared_state = SharedState()
+
 manager = ConnectionManager()
 
 
@@ -189,6 +212,21 @@ async def root():
 async def get_data():
     """REST endpoint for dashboard data."""
     return await get_dashboard_data()
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Railway."""
+    # Check if heartbeat is stale (> 5 minutes)
+    time_diff = (datetime.now() - shared_state.last_heartbeat).total_seconds()
+    is_healthy = time_diff < 300  # 5 minutes
+    
+    return {
+        "status": "healthy" if is_healthy else "unhealthy",
+        "last_heartbeat": shared_state.last_heartbeat.isoformat(),
+        "seconds_since_heartbeat": int(time_diff),
+        "bot_status": shared_state.bot_status
+    }
 
 
 @app.websocket("/ws")

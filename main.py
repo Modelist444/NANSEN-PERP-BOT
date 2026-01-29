@@ -19,7 +19,7 @@ from exchange import exchange_client, OrderSide
 from strategy import trading_strategy, TradeDirection
 from risk import risk_manager
 from database import db, Trade, EquitySnapshot, Alert, NansenSignalLog
-from server import run_server
+from server import run_server, shared_state
 import threading
 
 
@@ -122,19 +122,12 @@ class TradingBot:
             log_error(f"Error writing to trades CSV: {e}")
     
     def _log_trade_to_json(self, trade_data: dict):
-        """Log trade to JSON file for auditability."""
-        json_path = 'data/trades.json'
+        """Log trade to JSON-Lines file for performance."""
+        json_path = 'data/trades.jsonl'
         
         try:
-            trades = []
-            if os.path.exists(json_path):
-                with open(json_path, 'r') as f:
-                    trades = json.load(f)
-            
-            trades.append(trade_data)
-            
-            with open(json_path, 'w') as f:
-                json.dump(trades, f, indent=2)
+            with open(json_path, 'a') as f:
+                f.write(json.dumps(trade_data) + '\n')
                 
         except Exception as e:
             log_error(f"Error writing to trades JSON: {e}")
@@ -432,6 +425,10 @@ class TradingBot:
                 
                 # Sleep until next cycle
                 log_info(f"Sleeping {config.loop_interval_seconds}s until next cycle...")
+                
+                # Update heartbeat
+                shared_state.update_heartbeat()
+                shared_state.set_status(f"sleeping_cycle_{cycle_count}")
                 
                 # Sleep in small increments to allow for graceful shutdown
                 for _ in range(config.loop_interval_seconds):
