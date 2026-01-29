@@ -77,26 +77,28 @@ class BybitFuturesClient:
                 'sandbox': config.use_testnet,
                 'enableRateLimit': True,
                 'headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Referer': 'https://www.bytick.com/',
+                    'Origin': 'https://www.bytick.com'
                 },
                 'options': {
                     'defaultType': 'swap',
                     'adjustForTimeDifference': True,
                     'recvWindow': 30000,
-                    # v4.1: Use Bybit mirror to bypass CloudFront blocks on cloud providers
-                    'brokerId': 'Bybit',
+                    # v4.2: Use Bybit mirror to bypass CloudFront blocks on cloud providers
                     'api-testnet': 'https://api-testnet.bytick.com',
                     'api': 'https://api.bytick.com'
                 }
             })
             
-            # Explicitly override URLs to use the bytick mirror
-            if config.use_testnet:
-                self.exchange.urls['api']['public'] = 'https://api-testnet.bytick.com'
-                self.exchange.urls['api']['private'] = 'https://api-testnet.bytick.com'
-            else:
-                self.exchange.urls['api']['public'] = 'https://api.bytick.com'
-                self.exchange.urls['api']['private'] = 'https://api.bytick.com'
+            # Absolute URL override to force the mirror
+            base_url = 'https://api-testnet.bytick.com' if config.use_testnet else 'https://api.bytick.com'
+            self.exchange.urls['api'] = {
+                'public': base_url,
+                'private': base_url,
+                'rest': base_url,
+            }
+            log_info(f"🌐 Bybit Mirror Active: {base_url}")
         else:
             self.exchange = None
             log_info("🔑 API Keys missing or Dry Run: ENTERING FULL SIMULATION MODE")
