@@ -222,7 +222,7 @@ class NansenClient:
         chain = token_info.get("chain", "ethereum")
         
         data = self._request(
-            "/smart-money/netflows",
+            "/smart-money/netflow",
             method="POST",
             data={
                 "chain": chain,
@@ -252,14 +252,20 @@ class NansenClient:
             return cached
         
         token_info = self._get_token_info(token)
-        chain = token_info.get("chain", "ethereum")
+        chain = token_info.get("chain")
+        address = token_info.get("address")
         
+        # TGM Flow Intelligence requires a supported chain and token address
+        if not chain or not address:
+            log_info(f"ℹ️ {token}: Skipping exchange flow (No chain/address mapped)")
+            return None
+
         data = self._request(
             "/tgm/flow-intelligence",
             method="POST",
             data={
                 "chain": chain,
-                "token": token_info.get("id")
+                "token_address": address
             }
         )
         
@@ -608,19 +614,28 @@ class NansenClient:
         return 0.0
     
     def _get_token_info(self, token: str) -> Dict[str, str]:
-        """Map common symbols to chain and ID information."""
+        """Map common symbols to chain, ID, and address information."""
+        # v1: Token addresses are required for TGM endpoints
         token_map = {
-            "BTC": {"chain": "bitcoin", "id": "bitcoin"},
-            "ETH": {"chain": "ethereum", "id": "ethereum"},
-            "SOL": {"chain": "solana", "id": "solana"},
-            "AVAX": {"chain": "avalanche", "id": "avalanche"},
-            "LINK": {"chain": "ethereum", "id": "chainlink"},
-            "MATIC": {"chain": "polygon", "id": "polygon-ecosystem"},
-            "BNB": {"chain": "bnb", "id": "binance-coin"}
+            "BTC": {
+                "chain": "ethereum", # Use WBTC for flow proxy since BTC chain not supported in TGM
+                "id": "bitcoin",
+                "address": "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599" # WBTC
+            },
+            "ETH": {
+                "chain": "ethereum",
+                "id": "ethereum",
+                "address": "0x0000000000000000000000000000000000000000" # Native ETH
+            },
+            "SOL": {
+                "chain": "solana",
+                "id": "solana",
+                "address": "So11111111111111111111111111111111111111112" # Wrapped SOL
+            }
         }
         
         symbol = token.upper().replace("USDT", "")
-        return token_map.get(symbol, {"chain": "ethereum", "id": symbol.lower()})
+        return token_map.get(symbol, {})
 
     def _get_token_id(self, token: str) -> str:
         """Map common symbols to token IDs."""
