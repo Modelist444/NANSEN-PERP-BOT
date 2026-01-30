@@ -94,7 +94,9 @@ class Config:
     # ==========================================================================
     dry_run: bool = False              # LIVE mode (placing orders)
     use_testnet: bool = True           # USE BYBIT TESTNET
-    loop_interval_seconds: int = 60    # 60 seconds loop (1 minute)
+    loop_interval_seconds: int = 60    # 60 seconds loop (1 minute) when active
+    passive_loop_interval: int = 300  # 300 seconds loop (5 mins) when passive
+    nansen_cache_ttl: int = 300       # 5 minutes cache for Nansen
     
     # Dashboard
     dashboard_port: int = 8000
@@ -116,6 +118,9 @@ class Config:
         self.high_conviction_leverage = int(os.getenv("HIGH_CONVICTION_LEVERAGE", "4"))
         self.starting_capital = float(os.getenv("STARTING_CAPITAL", "500"))
         self.max_trades_per_day = int(os.getenv("MAX_TRADES_PER_DAY", "5"))
+        self.passive_loop_interval = int(os.getenv("PASSIVE_LOOP_INTERVAL", "300"))
+        self.nansen_cache_ttl = int(os.getenv("NANSEN_CACHE_TTL", "300"))
+        self.force_balance = os.getenv("FORCE_BALANCE", "none").lower()
         self.force_balance = os.getenv("FORCE_BALANCE", "none").lower()
         if self.force_balance != "none":
             self.force_balance = float(self.force_balance)

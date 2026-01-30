@@ -170,7 +170,7 @@ class NansenClient:
             })
         
         self._cache: Dict[str, Any] = {}
-        self._cache_ttl = timedelta(minutes=5)
+        self._cache_ttl = timedelta(seconds=config.nansen_cache_ttl)
     
     def _request(self, endpoint: str, method: str = "GET", data: Optional[Dict] = None, params: Optional[Dict] = None) -> Optional[Dict]:
         """Make authenticated request to Nansen API."""
