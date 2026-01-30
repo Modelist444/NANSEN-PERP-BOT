@@ -28,7 +28,7 @@ class TradingBot:
 
     def __init__(self):
         """Initialize the bot."""
-        log_info("🚀 Nansen Perp Bot v4.3.4.1-MANUAL-LEV starting...")
+        log_info("🚀 Nansen Perp Bot v4.3.4.2-TIMESTAMP-FIX starting...")
         self.running = False
         self._setup_signal_handlers()
         self._ensure_data_dirs()

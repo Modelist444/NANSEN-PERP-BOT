@@ -356,8 +356,15 @@ class BybitFuturesClient:
             order_status = order.get('status', 'open')
             order_amount = order.get('amount')
             order_price = order.get('average') or order.get('price')
+            fill_price = order.get("average") or order.get("price") or "MKT"
             
-            log_info(f"✅ Market Order Filled: {side.value} {quantity} {symbol} @ {order_price}")
+            log_info(f"✅ Market Order Filled: {side.value} {quantity} {symbol} @ {fill_price}")
+            
+            # Safely parse timestamp
+            ts = order.get("timestamp")
+            if ts is None:
+                ts = time.time() * 1000
+            order_timestamp = datetime.fromtimestamp(ts / 1000)
             
             result = Order(
                 id=order_id,
@@ -367,7 +374,7 @@ class BybitFuturesClient:
                 quantity=float(order_amount) if order_amount is not None else float(quantity),
                 price=float(order_price) if order_price is not None else self.get_current_price(symbol),
                 status=order_status,
-                timestamp=datetime.fromtimestamp(order.get('timestamp', time.time()*1000) / 1000)
+                timestamp=order_timestamp
             )
             
             log_trade(
