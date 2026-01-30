@@ -155,7 +155,7 @@ class Tier3Signal:
 class NansenClient:
     """Client for Nansen API integration."""
     
-    BASE_URL = "https://api.nansen.ai/api"
+    BASE_URL = "https://api.nansen.ai/api/v1"
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or config.nansen_api_key
@@ -172,11 +172,14 @@ class NansenClient:
         self._cache: Dict[str, Any] = {}
         self._cache_ttl = timedelta(minutes=5)
     
-    def _request(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict]:
+    def _request(self, endpoint: str, method: str = "GET", data: Optional[Dict] = None, params: Optional[Dict] = None) -> Optional[Dict]:
         """Make authenticated request to Nansen API."""
         try:
             url = f"{self.BASE_URL}{endpoint}"
-            response = self.session.get(url, params=params, timeout=30)
+            if method.upper() == "POST":
+                response = self.session.post(url, json=data, timeout=30)
+            else:
+                response = self.session.get(url, params=params, timeout=30)
             
             if response.status_code != 200:
                 log_error(f"❌ Nansen API Error [{response.status_code}] for {endpoint}: {response.text}")
@@ -228,8 +231,9 @@ class NansenClient:
         token_id = token_map.get(token.upper().replace("USDT", ""), token.lower())
         
         data = self._request(
-            "/v1/smart-money/netflow",
-            params={"token": token_id, "timeframe": timeframe}
+            "/smart-money/netflows",
+            method="POST",
+            data={"token": token_id, "timeframe": timeframe}
         )
         
         if data:
@@ -264,8 +268,9 @@ class NansenClient:
         token_id = token_map.get(token.upper().replace("USDT", ""), token.lower())
         
         data = self._request(
-            "/v1/tgm/flow-intelligence",
-            params={"token": token_id}
+            "/tgm/flow-intelligence",
+            method="POST",
+            data={"token": token_id}
         )
         
         if data:
