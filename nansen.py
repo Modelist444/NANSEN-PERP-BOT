@@ -225,7 +225,7 @@ class NansenClient:
             "/smart-money/netflow",
             method="POST",
             data={
-                "chain": chain,
+                "chains": [chain],
                 "token": token_info.get("id"), 
                 "timeframe": timeframe
             }
@@ -625,7 +625,7 @@ class NansenClient:
             "ETH": {
                 "chain": "ethereum",
                 "id": "ethereum",
-                "address": "0x0000000000000000000000000000000000000000" # Native ETH
+                "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2" # WETH (Nansen doesn't like 0x0...0)
             },
             "SOL": {
                 "chain": "solana",
