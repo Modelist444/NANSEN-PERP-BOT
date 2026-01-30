@@ -177,8 +177,10 @@ class NansenClient:
         try:
             url = f"{self.BASE_URL}{endpoint}"
             if method.upper() == "POST":
+                log_debug(f"DEBUG: Nansen POST {endpoint} Payload: {data}")
                 response = self.session.post(url, json=data, timeout=30)
             else:
+                log_debug(f"DEBUG: Nansen GET {endpoint} Params: {params}")
                 response = self.session.get(url, params=params, timeout=30)
             
             if response.status_code != 200:
@@ -461,10 +463,16 @@ class NansenClient:
         if cached:
             return cached
         
-        token_id = self._get_token_id(token)
+        token_info = self._get_token_info(token)
         data = self._request(
-            "/v1/smart-money/perp-ratio",
-            params={"token": token_id}
+            "/smart-money/perp-ratio",
+            method="POST",
+            data={
+                "chains": [token_info.get("chain", "ethereum")],
+                "filters": {
+                    "token_address": token_info.get("address")
+                }
+            }
         )
         
         if data and "long_ratio" in data:
@@ -480,10 +488,16 @@ class NansenClient:
         if cached:
             return cached
         
-        token_id = self._get_token_id(token)
+        token_info = self._get_token_info(token)
         data = self._request(
-            "/v1/smart-money/position-health",
-            params={"token": token_id}
+            "/smart-money/position-health",
+            method="POST",
+            data={
+                "chains": [token_info.get("chain", "ethereum")],
+                "filters": {
+                    "token_address": token_info.get("address")
+                }
+            }
         )
         
         if data and "health_score" in data:
@@ -499,10 +513,16 @@ class NansenClient:
         if cached:
             return cached
         
-        token_id = self._get_token_id(token)
+        token_info = self._get_token_info(token)
         data = self._request(
-            "/v1/smart-money/multi-timeframe-netflow",
-            params={"token": token_id}
+            "/smart-money/multi-timeframe-netflow",
+            method="POST",
+            data={
+                "chains": [token_info.get("chain", "ethereum")],
+                "filters": {
+                    "token_address": token_info.get("address")
+                }
+            }
         )
         
         if data:
@@ -516,10 +536,16 @@ class NansenClient:
         if cached:
             return cached
         
-        token_id = self._get_token_id(token)
+        token_info = self._get_token_info(token)
         data = self._request(
-            "/v1/institutional/flow",
-            params={"token": token_id}
+            "/institutional/flow",
+            method="POST",
+            data={
+                "chains": [token_info.get("chain", "ethereum")],
+                "filters": {
+                    "token_address": token_info.get("address")
+                }
+            }
         )
         
         if data:
@@ -533,10 +559,16 @@ class NansenClient:
         if cached:
             return cached
         
-        token_id = self._get_token_id(token)
+        token_info = self._get_token_info(token)
         data = self._request(
-            "/v1/token/concentration",
-            params={"token": token_id}
+            "/token/concentration",
+            method="POST",
+            data={
+                "chains": [token_info.get("chain", "ethereum")],
+                "filters": {
+                    "token_address": token_info.get("address")
+                }
+            }
         )
         
         if data and "concentration" in data:
@@ -545,8 +577,6 @@ class NansenClient:
             return conc
         return None
     
-    # ========== TIER 3 SIGNAL METHODS ==========
-    
     def get_whale_flow(self, token: str) -> str:
         """Get whale flow direction: accumulation/distribution/neutral."""
         cache_key = f"whale_flow_{token}"
@@ -554,10 +584,16 @@ class NansenClient:
         if cached:
             return cached
         
-        token_id = self._get_token_id(token)
+        token_info = self._get_token_info(token)
         data = self._request(
-            "/v1/whale/flow",
-            params={"token": token_id}
+            "/whale/flow",
+            method="POST",
+            data={
+                "chains": [token_info.get("chain", "ethereum")],
+                "filters": {
+                    "token_address": token_info.get("address")
+                }
+            }
         )
         
         if data and "direction" in data:
@@ -573,7 +609,7 @@ class NansenClient:
         if cached:
             return cached
         
-        data = self._request("/v1/market/correlation-regime")
+        data = self._request("/market/correlation-regime")
         
         if data and "regime" in data:
             regime = data["regime"].upper()
@@ -588,10 +624,16 @@ class NansenClient:
         if cached:
             return cached
         
-        token_id = self._get_token_id(token)
+        token_info = self._get_token_info(token)
         data = self._request(
-            "/v1/sentiment/divergence",
-            params={"token": token_id}
+            "/sentiment/divergence",
+            method="POST",
+            data={
+                "chains": [token_info.get("chain", "ethereum")],
+                "filters": {
+                    "token_address": token_info.get("address")
+                }
+            }
         )
         
         if data and "sentiment" in data:
@@ -607,10 +649,16 @@ class NansenClient:
         if cached:
             return cached
         
-        token_id = self._get_token_id(token)
+        token_info = self._get_token_info(token)
         data = self._request(
-            "/v1/institutional/pnl",
-            params={"token": token_id}
+            "/institutional/pnl",
+            method="POST",
+            data={
+                "chains": [token_info.get("chain", "ethereum")],
+                "filters": {
+                    "token_address": token_info.get("address")
+                }
+            }
         )
         
         if data and "pnl" in data:
