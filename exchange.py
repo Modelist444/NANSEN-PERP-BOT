@@ -94,32 +94,8 @@ class BybitFuturesClient:
 
     def set_leverage(self, symbol: str, leverage: int):
         """Set leverage for a specific symbol (v3.3 tiered leverage)."""
-        if config.dry_run:
-            log_info(f"[DRY RUN] Set leverage for {symbol} to {leverage}x")
-            return
-
-        if symbol in self.leverage_set:
-            # log_debug(f"Leverage already set for {symbol} in this session.")
-            return
-
-        try:
-            self.exchange.load_markets()
-            self._ensure_initialized(symbol)
-            
-            # Bybit linear perpetuals use 'BTC/USDT'
-            ccxt_symbol = symbol.replace("USDT", "/USDT")
-            
-            self.exchange.set_leverage(leverage, ccxt_symbol)
-            log_info(f"Leverage set to {leverage}x for {symbol}")
-            self.leverage_set.add(symbol)
-            
-        except ccxt.BaseError as e:
-            error_msg = str(e).lower()
-            if "110043" in error_msg or "leverage not modified" in error_msg:
-                log_info(f"Leverage already set for {symbol} on exchange, continuing...")
-                self.leverage_set.add(symbol)
-                return
-            log_error(f"Error setting leverage for {symbol}: {e}")
+        log_info(f"Skipping leverage set for {symbol} (handled manually / preconfigured)")
+        return
     
     def _ensure_initialized(self, symbol: str):
         """Ensure margin mode is set correctly for a symbol."""
