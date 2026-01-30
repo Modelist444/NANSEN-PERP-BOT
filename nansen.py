@@ -231,8 +231,12 @@ class NansenClient:
             }
         )
         
+        # Debug: Log raw response to understand structure
         if data:
+            log_debug(f"Nansen Netflow Response for {token}: {data}")
             self._set_cache(cache_key, data)
+        else:
+            log_info(f"Nansen Netflow returned None for {token} (chain={chain}, id={token_info.get('id')})")
         
         return data
     

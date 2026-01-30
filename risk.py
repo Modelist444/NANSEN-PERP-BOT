@@ -72,9 +72,17 @@ class RiskManager:
         """
         self._check_daily_reset()
         
+        # Auto-adjust peak capital on first run if no trades recorded yet
+        # This prevents false drawdown halt on restart
+        if self.wins == 0 and self.losses == 0 and account_equity < self._peak_capital:
+            log_info(f"First run detected. Adjusting peak capital from ${self._peak_capital:.2f} to ${account_equity:.2f}")
+            self._peak_capital = account_equity
+        
         # 1. Max drawdown: 15%
         if self._peak_capital > 0:
             drawdown_pct = ((self._peak_capital - account_equity) / self._peak_capital)
+            log_debug(f"Drawdown check: {drawdown_pct*100:.1f}% (Current: ${account_equity:.2f} | Peak: ${self._peak_capital:.2f})")
+            
             if drawdown_pct >= config.max_drawdown_pct:
                 self.trading_halted = True
                 self.halt_reason = f"Max drawdown: {drawdown_pct*100:.1f}%"
