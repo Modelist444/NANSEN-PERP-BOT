@@ -87,6 +87,7 @@ class BybitFuturesClient:
             log_info("🔑 API Keys missing or Dry Run: ENTERING FULL SIMULATION MODE")
         
         self.initialized_symbols: Set[str] = set()
+        self.leverage_set: Set[str] = set()
         self._mock_positions: List[Position] = []
         self._mock_balance = 10000.0
 
@@ -95,7 +96,11 @@ class BybitFuturesClient:
         if config.dry_run:
             log_info(f"[DRY RUN] Set leverage for {symbol} to {leverage}x")
             return
-            
+
+        if symbol in self.leverage_set:
+            # log_debug(f"Leverage already set for {symbol} in this session.")
+            return
+
         try:
             self.exchange.load_markets()
             self._ensure_initialized(symbol)
@@ -105,11 +110,13 @@ class BybitFuturesClient:
             
             self.exchange.set_leverage(leverage, ccxt_symbol)
             log_info(f"Leverage set to {leverage}x for {symbol}")
+            self.leverage_set.add(symbol)
             
         except ccxt.BaseError as e:
             error_msg = str(e).lower()
             if "110043" in error_msg or "leverage not modified" in error_msg:
-                log_info(f"Leverage already set to {leverage}x for {symbol}, continuing...")
+                log_info(f"Leverage already set for {symbol} on exchange, continuing...")
+                self.leverage_set.add(symbol)
                 return
             log_error(f"Error setting leverage for {symbol}: {e}")
     
