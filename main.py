@@ -20,6 +20,12 @@ from strategy import trading_strategy, TradeDirection
 from risk import risk_manager
 from database import db, Trade, EquitySnapshot, Alert, NansenSignalLog
 from server import run_server, shared_state
+from indicators import (
+    calculate_all_indicators,
+    get_trend_direction,
+    is_rsi_valid_for_long, 
+    is_rsi_valid_for_short
+)
 import threading
 
 
@@ -28,7 +34,7 @@ class TradingBot:
 
     def __init__(self):
         """Initialize the bot."""
-        log_info("🚀 Nansen Perp Bot v4.4.0-EVENT-DRIVEN starting...")
+        log_info("🚀 Nansen Perp Bot v4.4.1-EVENT-FIX starting...")
         self.running = False
         self._setup_signal_handlers()
         self._ensure_data_dirs()
@@ -442,19 +448,15 @@ class TradingBot:
                     except Exception as e:
                         log_error(f"Error processing {symbol}: {e}")
                 
-                # Determine sleep interval based on activity
-                active_count = risk_manager.get_stats()['active_positions']
-                sleep_interval = config.loop_interval_seconds if active_count > 0 else config.passive_loop_interval
-                
                 # Sleep until next cycle
-                log_info(f"Sleeping {sleep_interval}s until next cycle (Active Positions: {active_count})...")
+                log_info(f"Sleeping {config.loop_interval_seconds}s until next cycle...")
                 
                 # Update heartbeat
                 shared_state.update_heartbeat()
                 shared_state.set_status(f"sleeping_cycle_{cycle_count}")
                 
                 # Sleep in small increments to allow for graceful shutdown
-                for _ in range(sleep_interval):
+                for _ in range(config.loop_interval_seconds):
                     if not self.running:
                         break
                     time.sleep(1)
