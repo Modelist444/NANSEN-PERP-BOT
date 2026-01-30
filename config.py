@@ -94,7 +94,7 @@ class Config:
     # ==========================================================================
     dry_run: bool = False              # LIVE mode (placing orders)
     use_testnet: bool = True           # USE BYBIT TESTNET
-    loop_interval_seconds: int = 60    # 60 seconds loop (1 minute) when active
+    loop_interval_seconds: int = 10    # 10 seconds loop (User Request)
     passive_loop_interval: int = 300  # 300 seconds loop (5 mins) when passive
     nansen_cache_ttl: int = 300       # 5 minutes cache for Nansen
     

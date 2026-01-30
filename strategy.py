@@ -147,16 +147,22 @@ class NansenSMFStrategy:
         indicators: Dict[str, float]
     ) -> Tuple[Optional[TradeDirection], SignalDetails]:
         """
-        Validate trading signal based on v4.0 rules.
+        Validate trading signal based on v4.0 Event-Driven rules.
         
-        Returns:
-            (direction, signal_details) - direction is None if no valid signal
+        Technicals (EMA/RSI) are checked FIRST to save Nansen credits.
         """
-        # Step 1: Get Nansen Signal (MANDATORY)
-        nansen_signal = nansen_client.get_signal(symbol)
+        # Step 1: Check Technical Trend & Momentum
+        trend = get_trend_direction(indicators)
+        rsi = indicators['rsi']
         
-        if nansen_signal is None or nansen_signal.is_neutral:
-            log_debug(f"{symbol}: No valid Nansen signal (neutral or missing)")
+        potential_direction = None
+        if trend == 'uptrend' and is_rsi_valid_for_long(rsi):
+            potential_direction = TradeDirection.LONG
+        elif trend == 'downtrend' and is_rsi_valid_for_short(rsi):
+            potential_direction = TradeDirection.SHORT
+            
+        if potential_direction is None:
+            log_debug(f"{symbol}: Skipping Nansen (Technical filter not met: Trend={trend}, RSI={rsi:.1f})")
             return None, SignalDetails(
                 nansen_signal=False,
                 nansen_type='neutral',
@@ -164,42 +170,37 @@ class NansenSMFStrategy:
                 rsi_valid=False,
                 confidence_score=0.0
             )
+
+        # Step 2: Technicals met! Now fetch Nansen Signal (MANDATORY)
+        nansen_signal = nansen_client.get_signal(symbol)
+        
+        if nansen_signal is None or nansen_signal.is_neutral:
+            log_debug(f"{symbol}: Technicals OK, but no valid Nansen signal")
+            return None, SignalDetails(
+                nansen_signal=False,
+                nansen_type='neutral',
+                trend_aligned=True,
+                rsi_valid=True,
+                confidence_score=0.0
+            )
         
         nansen_type = nansen_signal.signal_type.value
         confidence = nansen_signal.confidence_score
         
-        # Step 2: Get Trend Direction from EMA
-        trend = get_trend_direction(indicators)
-        rsi = indicators['rsi']
-        
-        # Step 3: Validate based on Nansen + Trend + RSI
+        # Step 3: Final confirmation (Nansen direction must match technical direction)
         direction = None
-        trend_aligned = False
-        rsi_valid = False
-        
-        if nansen_signal.is_bullish:  # ACCUMULATION
-            trend_aligned = (trend == 'uptrend')
-            rsi_valid = is_rsi_valid_for_long(rsi)
-            
-            if trend_aligned and rsi_valid:
-                direction = TradeDirection.LONG
-            else:
-                log_debug(f"{symbol}: Accumulation but trend={trend}, RSI={rsi:.1f} (valid={rsi_valid})")
-                
-        elif nansen_signal.is_bearish:  # DISTRIBUTION
-            trend_aligned = (trend == 'downtrend')
-            rsi_valid = is_rsi_valid_for_short(rsi)
-            
-            if trend_aligned and rsi_valid:
-                direction = TradeDirection.SHORT
-            else:
-                log_debug(f"{symbol}: Distribution but trend={trend}, RSI={rsi:.1f} (valid={rsi_valid})")
-        
+        if potential_direction == TradeDirection.LONG and nansen_signal.is_bullish:
+            direction = TradeDirection.LONG
+        elif potential_direction == TradeDirection.SHORT and nansen_signal.is_bearish:
+            direction = TradeDirection.SHORT
+        else:
+            log_debug(f"{symbol}: Nansen signal ({nansen_type}) conflicts with Technical trend ({trend})")
+
         signal_details = SignalDetails(
             nansen_signal=True,
             nansen_type=nansen_type,
-            trend_aligned=trend_aligned,
-            rsi_valid=rsi_valid,
+            trend_aligned=True,
+            rsi_valid=True,
             confidence_score=confidence
         )
         

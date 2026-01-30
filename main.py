@@ -28,7 +28,7 @@ class TradingBot:
 
     def __init__(self):
         """Initialize the bot."""
-        log_info("🚀 Nansen Perp Bot v4.3.5.2-CREDIT-SAVE starting...")
+        log_info("🚀 Nansen Perp Bot v4.4.0-EVENT-DRIVEN starting...")
         self.running = False
         self._setup_signal_handlers()
         self._ensure_data_dirs()
@@ -73,16 +73,34 @@ class TradingBot:
             log_error(f"Error recording equity snapshot: {e}")
 
     def _log_all_nansen_signals(self):
-        """Log Nansen signals for all tracked pairs."""
+        """
+        Log Nansen signals for all tracked pairs.
+        Checks technicals FIRST to save API credits.
+        """
         try:
             for symbol in config.trading_pairs:
+                # 1. Check technicals first
+                df = exchange_client.get_ohlcv(symbol, config.signal_timeframe, limit=50)
+                if df is None or len(df) < 20:
+                    continue
+                
+                indicators = calculate_all_indicators(df)
+                trend = get_trend_direction(indicators)
+                rsi = indicators['rsi']
+                
+                # Simple event trigger: if we have a trend and RSI is OK, then fetch Nansen
+                is_triggered = (trend == 'uptrend' and is_rsi_valid_for_long(rsi)) or \
+                               (trend == 'downtrend' and is_rsi_valid_for_short(rsi))
+                
+                if not is_triggered:
+                    continue
+                
+                # 2. Technicals met, fetch Nansen
                 nansen_signal = nansen_client.get_signal(symbol)
                 if not nansen_signal:
                     continue
                 
-                current_price = exchange_client.get_current_price(symbol)
-                if not current_price:
-                    continue
+                current_price = indicators['price']
                 
                 log_entry = NansenSignalLog(
                     id=None,
