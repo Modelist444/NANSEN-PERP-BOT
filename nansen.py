@@ -226,7 +226,9 @@ class NansenClient:
             method="POST",
             data={
                 "chains": [chain],
-                "token": token_info.get("id"), 
+                "filters": {
+                    "token_address": token_info.get("address")
+                }, 
                 "timeframe": timeframe
             }
         )
