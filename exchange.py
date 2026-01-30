@@ -358,15 +358,19 @@ class BybitFuturesClient:
                 params={'reduceOnly': reduce_only}
             )
             
+            # Safely parse quantity and price (Bybit sometimes returns None for these in REST response)
+            order_amount = order.get('amount')
+            order_price = order.get('average') or order.get('price') or order.get('last_price', 0)
+            
             result = Order(
                 id=str(order['id']),
                 symbol=symbol,
                 side=side,
                 type="market",
-                quantity=float(order['amount']),
-                price=float(order.get('average', order.get('price', 0))),
-                status=order['status'],
-                timestamp=datetime.fromtimestamp(order['timestamp'] / 1000)
+                quantity=float(order_amount) if order_amount is not None else float(quantity),
+                price=float(order_price) if order_price is not None else self.get_current_price(symbol),
+                status=order.get('status', 'open'),
+                timestamp=datetime.fromtimestamp(order.get('timestamp', time.time()*1000) / 1000)
             )
             
             log_trade(
