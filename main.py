@@ -28,7 +28,7 @@ class TradingBot:
 
     def __init__(self):
         """Initialize the bot."""
-        log_info("🚀 Nansen Perp Bot v4.3.3-SIMPLIFIED starting...")
+        log_info("🚀 Nansen Perp Bot v4.3.4-PLAN-B starting...")
         self.running = False
         self._setup_signal_handlers()
         self._ensure_data_dirs()
@@ -254,8 +254,8 @@ class TradingBot:
             quantity=signal.position_size
         )
         
-        if not entry_order:
-            log_error(f"{symbol}: Failed to place entry order")
+        if entry_order is None:
+            log_warning(f"Skipping {symbol}, order placement failed")
             return False
         
         # Place stop loss (1.5x ATR)

@@ -77,7 +77,8 @@ class BybitFuturesClient:
                 'sandbox': config.use_testnet,
                 'enableRateLimit': True,
                 'options': {
-                    'defaultType': 'swap',
+                    'defaultType': 'linear',
+                    'hedgeMode': False,
                     'adjustForTimeDifference': True,
                     'recvWindow': 30000
                 }
@@ -361,31 +362,35 @@ class BybitFuturesClient:
             self._ensure_initialized(symbol)
             # Bybit linear perpetuals use 'BTC/USDT'
             ccxt_symbol = symbol.replace("USDT", "/USDT")
-            ccxt_side = side.value
             
-            self.exchange.load_markets()
-            formatted_quantity = self.exchange.amount_to_precision(ccxt_symbol, quantity)
-            
-            order = self.exchange.create_order(
-                ccxt_symbol, 
-                "market", 
-                ccxt_side, 
-                formatted_quantity, 
+            # Plan B: Use simplified one-liner
+            order = self.exchange.create_market_order(
+                ccxt_symbol,
+                side.value,
+                quantity,
                 params={'reduceOnly': reduce_only}
             )
             
-            # Safely parse quantity and price (Bybit sometimes returns None for these in REST response)
+            if order is None:
+                log_error(f"Order failed for {symbol}: API returned None")
+                return None
+                
+            # Safely parse order details with fallbacks
+            order_id = str(order.get('id', 'unknown'))
+            order_status = order.get('status', 'open')
             order_amount = order.get('amount')
-            order_price = order.get('average') or order.get('price') or order.get('last_price', 0)
+            order_price = order.get('average') or order.get('price')
+            
+            log_info(f"✅ Market Order Filled: {side.value} {quantity} {symbol} @ {order_price}")
             
             result = Order(
-                id=str(order['id']),
+                id=order_id,
                 symbol=symbol,
                 side=side,
                 type="market",
                 quantity=float(order_amount) if order_amount is not None else float(quantity),
                 price=float(order_price) if order_price is not None else self.get_current_price(symbol),
-                status=order.get('status', 'open'),
+                status=order_status,
                 timestamp=datetime.fromtimestamp(order.get('timestamp', time.time()*1000) / 1000)
             )
             
