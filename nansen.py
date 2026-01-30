@@ -155,7 +155,7 @@ class Tier3Signal:
 class NansenClient:
     """Client for Nansen API integration."""
     
-    BASE_URL = "https://api.nansen.ai"
+    BASE_URL = "https://api.nansen.ai/api"
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or config.nansen_api_key
