@@ -165,7 +165,7 @@ class NansenClient:
         self.session = requests.Session()
         if not self.mock_mode:
             self.session.headers.update({
-                "Authorization": f"Bearer {self.api_key}",
+                "api-key": self.api_key,
                 "Content-Type": "application/json"
             })
         
