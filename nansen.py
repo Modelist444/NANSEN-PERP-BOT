@@ -218,22 +218,17 @@ class NansenClient:
         if cached:
             return cached
         
-        # Map common symbols to chain-specific addresses if needed
-        token_map = {
-            "BTC": "bitcoin",
-            "ETH": "ethereum", 
-            "SOL": "solana",
-            "AVAX": "avalanche",
-            "LINK": "chainlink",
-            "MATIC": "polygon"
-        }
-        
-        token_id = token_map.get(token.upper().replace("USDT", ""), token.lower())
+        token_info = self._get_token_info(token)
+        chain = token_info.get("chain", "ethereum")
         
         data = self._request(
             "/smart-money/netflows",
             method="POST",
-            data={"token": token_id, "timeframe": timeframe}
+            data={
+                "chain": chain,
+                "token": token_id, 
+                "timeframe": timeframe
+            }
         )
         
         if data:
@@ -256,21 +251,16 @@ class NansenClient:
         if cached:
             return cached
         
-        token_map = {
-            "BTC": "bitcoin",
-            "ETH": "ethereum",
-            "SOL": "solana",
-            "AVAX": "avalanche", 
-            "LINK": "chainlink",
-            "MATIC": "polygon"
-        }
-        
-        token_id = token_map.get(token.upper().replace("USDT", ""), token.lower())
+        token_info = self._get_token_info(token)
+        chain = token_info.get("chain", "ethereum")
         
         data = self._request(
             "/tgm/flow-intelligence",
             method="POST",
-            data={"token": token_id}
+            data={
+                "chain": chain,
+                "token": token_id
+            }
         )
         
         if data:
@@ -617,19 +607,24 @@ class NansenClient:
             return pnl
         return 0.0
     
+    def _get_token_info(self, token: str) -> Dict[str, str]:
+        """Map common symbols to chain and ID information."""
+        token_map = {
+            "BTC": {"chain": "bitcoin", "id": "bitcoin"},
+            "ETH": {"chain": "ethereum", "id": "ethereum"},
+            "SOL": {"chain": "solana", "id": "solana"},
+            "AVAX": {"chain": "avalanche", "id": "avalanche"},
+            "LINK": {"chain": "ethereum", "id": "chainlink"},
+            "MATIC": {"chain": "polygon", "id": "polygon-ecosystem"},
+            "BNB": {"chain": "bnb", "id": "binance-coin"}
+        }
+        
+        symbol = token.upper().replace("USDT", "")
+        return token_map.get(symbol, {"chain": "ethereum", "id": symbol.lower()})
+
     def _get_token_id(self, token: str) -> str:
         """Map common symbols to token IDs."""
-        token_map = {
-            "BTC": "bitcoin",
-            "ETH": "ethereum",
-            "SOL": "solana",
-            "AVAX": "avalanche",
-            "LINK": "chainlink",
-            "MATIC": "polygon",
-            "BITCOIN": "bitcoin",
-            "ETHEREUM": "ethereum"
-        }
-        return token_map.get(token.upper().replace("USDT", ""), token.lower())
+        return self._get_token_info(token).get("id")
 
 
 # Global client instance
