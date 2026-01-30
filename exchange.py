@@ -501,6 +501,29 @@ class BybitFuturesClient:
             log_error(f"Error placing take-profit for {symbol}: {e}")
             return None
     
+    def set_sl_tp(self, symbol: str, stop_loss: float, take_profit: float):
+        """Set stop-loss and take-profit using Bybit's trading stop (more reliable than separate orders)."""
+        if self.mock_mode:
+            log_info(f"[SIMULATION] SL/TP set for {symbol} | SL={stop_loss} | TP={take_profit}")
+            return
+        
+        try:
+            # Bybit linear perpetuals use 'BTC/USDT'
+            ccxt_symbol = symbol.replace("USDT", "/USDT")
+            
+            self.exchange.set_trading_stop(
+                ccxt_symbol,
+                stopLoss=stop_loss,
+                takeProfit=take_profit,
+                params={
+                    "category": "linear",
+                    "positionIdx": 0  # one-way mode
+                }
+            )
+            log_info(f"SL/TP set for {symbol} | SL={stop_loss} | TP={take_profit}")
+        except Exception as e:
+            log_error(f"Failed to set SL/TP for {symbol}: {e}")
+    
     def get_open_positions(self) -> List[Position]:
         """Get all open positions (with Mock support)."""
         if self.mock_mode:
