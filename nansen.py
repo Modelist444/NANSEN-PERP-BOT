@@ -223,13 +223,12 @@ class NansenClient:
         token_info = self._get_token_info(token)
         chain = token_info.get("chain", "ethereum")
         
-        # v4.3.3: Simplified payload - just chain and time_range
+        # v4.3.5: Multi-chain query for better data coverage
         data = self._request(
             "/smart-money/netflow",
             method="POST",
             data={
-                "chain": chain,
-                "time_range": timeframe
+                "chains": ["ethereum", "solana"]
             }
         )
         
