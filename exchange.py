@@ -99,9 +99,18 @@ class BybitFuturesClient:
         try:
             self.exchange.load_markets()
             self._ensure_initialized(symbol)
-            self.exchange.set_leverage(leverage, symbol)
-            log_info(f"Set leverage for {symbol} to {leverage}x")
+            
+            # Bybit linear perpetuals use 'BTC/USDT'
+            ccxt_symbol = symbol.replace("USDT", "/USDT")
+            
+            self.exchange.set_leverage(leverage, ccxt_symbol)
+            log_info(f"Leverage set to {leverage}x for {symbol}")
+            
         except ccxt.BaseError as e:
+            error_msg = str(e).lower()
+            if "110043" in error_msg or "leverage not modified" in error_msg:
+                log_info(f"Leverage already set to {leverage}x for {symbol}, continuing...")
+                return
             log_error(f"Error setting leverage for {symbol}: {e}")
     
     def _ensure_initialized(self, symbol: str):
