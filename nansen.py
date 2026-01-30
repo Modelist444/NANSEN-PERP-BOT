@@ -223,15 +223,13 @@ class NansenClient:
         token_info = self._get_token_info(token)
         chain = token_info.get("chain", "ethereum")
         
+        # v4.3.3: Simplified payload - just chain and time_range
         data = self._request(
             "/smart-money/netflow",
             method="POST",
             data={
-                "chains": [chain],
-                "filters": {
-                    "token_address": token_info.get("address")
-                }, 
-                "timeframe": timeframe
+                "chain": chain,
+                "time_range": timeframe
             }
         )
         
@@ -240,7 +238,7 @@ class NansenClient:
             log_debug(f"Nansen Netflow Response for {token}: {data}")
             self._set_cache(cache_key, data)
         else:
-            log_info(f"Nansen Netflow returned None for {token} (chain={chain}, id={token_info.get('id')})")
+            log_info(f"Nansen Netflow returned None for {token} (chain={chain})")
         
         return data
     
