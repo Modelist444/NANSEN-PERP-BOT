@@ -114,8 +114,13 @@ class Config:
         self.daily_loss_limit_pct = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "10")) / 100
         self.base_leverage = int(os.getenv("BASE_LEVERAGE", "4"))
         self.high_conviction_leverage = int(os.getenv("HIGH_CONVICTION_LEVERAGE", "4"))
-        self.starting_capital = float(os.getenv("STARTING_CAPITAL", "100"))
+        self.starting_capital = float(os.getenv("STARTING_CAPITAL", "500"))
         self.max_trades_per_day = int(os.getenv("MAX_TRADES_PER_DAY", "5"))
+        self.force_balance = os.getenv("FORCE_BALANCE", "none").lower()
+        if self.force_balance != "none":
+            self.force_balance = float(self.force_balance)
+        else:
+            self.force_balance = None
     
     @property
     def all_pairs(self) -> List[str]:

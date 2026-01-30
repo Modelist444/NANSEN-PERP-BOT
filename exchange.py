@@ -122,6 +122,9 @@ class BybitFuturesClient:
     
     def get_account_balance(self) -> float:
         """Get available USDT balance."""
+        if config.force_balance is not None:
+            return config.force_balance
+            
         if self.mock_mode:
             return self._mock_balance
             
@@ -135,6 +138,9 @@ class BybitFuturesClient:
     
     def get_total_equity(self) -> float:
         """Get total account equity (balance + unrealized PnL)."""
+        if config.force_balance is not None:
+            return config.force_balance
+            
         if self.mock_mode:
             unrealized = sum(p.unrealized_pnl for p in self._mock_positions)
             return self._mock_balance + unrealized
