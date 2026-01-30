@@ -226,7 +226,7 @@ class NansenClient:
             method="POST",
             data={
                 "chain": chain,
-                "token": token_id, 
+                "token": token_info.get("id"), 
                 "timeframe": timeframe
             }
         )
@@ -259,7 +259,7 @@ class NansenClient:
             method="POST",
             data={
                 "chain": chain,
-                "token": token_id
+                "token": token_info.get("id")
             }
         )
         
